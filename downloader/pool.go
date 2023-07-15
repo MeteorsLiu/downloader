@@ -6,11 +6,10 @@ import (
 )
 
 type Pool struct {
-	wg        sync.WaitGroup
-	sem       chan struct{}
-	addtional chan struct{}
-	ctx       context.Context
-	doStop    context.CancelFunc
+	wg     sync.WaitGroup
+	sem    chan struct{}
+	ctx    context.Context
+	doStop context.CancelFunc
 }
 
 func NewPool(ctx context.Context, n int) *Pool {
@@ -31,12 +30,8 @@ func (p *Pool) Stop() {
 	p.doStop()
 }
 
-func (p *Pool) Add(n int) {
-	p.addtional = make(chan struct{}, n)
-}
-
-func (p *Pool) Zero() {
-	p.addtional = nil
+func (p *Pool) Add(task func()) {
+	p.newWorker(task, true)
 }
 
 func (p *Pool) newWorker(task func(), isAddtional ...bool) {
@@ -62,13 +57,9 @@ func (p *Pool) Publish(task func()) {
 		return
 	default:
 	}
-	// addtional may changed, do a copy
-	addtional := p.addtional
 	select {
 	case p.sem <- struct{}{}:
 		p.newWorker(task)
-	case addtional <- struct{}{}:
-		p.newWorker(task, true)
 	case <-p.ctx.Done():
 	}
 }
