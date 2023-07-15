@@ -31,6 +31,8 @@ type Downloader struct {
 	header         http.Header
 	connectTimeout time.Duration
 	timeout        time.Duration
+	stop           context.Context
+	doStop         context.CancelFunc
 }
 
 type Options func(*Downloader)
@@ -103,6 +105,11 @@ func NewDownloader(opts ...Options) *Downloader {
 	if dl.target == "" {
 		panic("no target website")
 	}
+	dl.init()
+	return dl
+}
+
+func (dl *Downloader) init() {
 	urlProxy := dl.proxy()
 	if urlProxy == "" {
 		// we need nil here
@@ -112,7 +119,7 @@ func NewDownloader(opts ...Options) *Downloader {
 	} else {
 		dl.urlProxy, _ = url.Parse(urlProxy)
 	}
-	return dl
+	dl.stop, dl.doStop = context.WithCancel(cb)
 }
 
 func (d *Downloader) SetThreadsNum(n int) {
