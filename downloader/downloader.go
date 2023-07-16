@@ -402,8 +402,10 @@ func (d *Downloader) Start() {
 	// start to combine the chunks
 	// we need to reverse the chunk map
 	// because the calculation of the chunk is reversed
+	buf := make([]byte, 32768)
 	for i := len(chunkMap) - 1; i >= 0; i-- {
-		io.Copy(saveTo, chunkMap[i])
+		n, err := chunkMap[i].Read(buf)
+		fmt.Println(n, err, buf[0:n])
 	}
 	printMsg("下载已完成")
 }
