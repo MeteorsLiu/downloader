@@ -346,18 +346,18 @@ func (d *Downloader) Start() {
 	eachChunk := d.fileSize / d.threadsNum
 	chunkMap := map[int]*os.File{}
 	fileName := path.Base(d.target)
-
-	defer func() {
-		// catch panic
-		// make sure tmp files cleared
-		_ = recover()
-		for _, f := range chunkMap {
-			fn := f.Name()
-			f.Close()
-			os.Remove(fn)
-		}
-	}()
-
+	/*
+		defer func() {
+			// catch panic
+			// make sure tmp files cleared
+			_ = recover()
+			for _, f := range chunkMap {
+				fn := f.Name()
+				f.Close()
+				os.Remove(fn)
+			}
+		}()
+	*/
 	for i := 0; i < d.threadsNum; i++ {
 		chunkMap[i], err = os.CreateTemp("", "*"+fileName)
 		if err != nil {
