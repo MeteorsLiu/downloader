@@ -292,9 +292,7 @@ func (d *Downloader) download(f *os.File, id, frombyteRange, tobyteRange int) er
 	if id > 0 {
 		tobyteRange -= 1
 	}
-	ran := fmt.Sprintf("bytes=%d-%d", frombyteRange, tobyteRange)
-	fmt.Println(ran, f.Name())
-	header.Set("Range", ran)
+	header.Set("Range", fmt.Sprintf("bytes=%d-%d", frombyteRange, tobyteRange))
 	res, err := d.do("GET", header)
 	if err != nil {
 		return err
@@ -346,18 +344,18 @@ func (d *Downloader) Start() {
 	eachChunk := d.fileSize / d.threadsNum
 	chunkMap := map[int]*os.File{}
 	fileName := path.Base(d.target)
-	/*
-		defer func() {
-			// catch panic
-			// make sure tmp files cleared
-			_ = recover()
-			for _, f := range chunkMap {
-				fn := f.Name()
-				f.Close()
-				os.Remove(fn)
-			}
-		}()
-	*/
+
+	defer func() {
+		// catch panic
+		// make sure tmp files cleared
+		_ = recover()
+		for _, f := range chunkMap {
+			fn := f.Name()
+			f.Close()
+			os.Remove(fn)
+		}
+	}()
+
 	for i := 0; i < d.threadsNum; i++ {
 		chunkMap[i], err = os.CreateTemp("", "*"+fileName)
 		if err != nil {
@@ -402,10 +400,9 @@ func (d *Downloader) Start() {
 	// start to combine the chunks
 	// we need to reverse the chunk map
 	// because the calculation of the chunk is reversed
-	buf := make([]byte, 32768)
 	for i := len(chunkMap) - 1; i >= 0; i-- {
-		n, err := chunkMap[i].Read(buf)
-		fmt.Println(n, err, buf[0:n])
+		chunkMap[i].Seek(0, io.SeekStart)
+		io.Copy(saveTo, chunkMap[i])
 	}
 	printMsg("下载已完成")
 }
