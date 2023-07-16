@@ -14,7 +14,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/MeteorsLiu/downloader/proxy/socks5"
@@ -24,22 +23,23 @@ import (
 const (
 	DefaultConnectTimeout = 30 * time.Second
 	DefaultRetry          = 5
+	// if the file is larger than the DoubleThresh
+	// double the default threadsNum
+	// however, if you set the threadsNum,
+	// this will be ignored.
+	DoubleThresh = 10 * 1024 * 1024 * 1024
 )
 
 var (
-	cb      = context.Background()
-	reg     = regexp.MustCompile(`\s|\n`)
-	bufPool = sync.Pool{
-		New: func() any {
-			return make([]byte, 32768)
-		},
-	}
+	cb  = context.Background()
+	reg = regexp.MustCompile(`\s|\n`)
 )
 
 type Downloader struct {
 	retry          int
 	fileSize       int
 	threadsNum     int
+	customThreads  bool
 	target         string
 	saveTo         string
 	disableProxy   bool
@@ -62,6 +62,7 @@ func trimTarget(target string) string {
 func WithThreadsNum(n int) Options {
 	return func(d *Downloader) {
 		d.threadsNum = n
+		d.customThreads = true
 	}
 }
 
@@ -271,6 +272,9 @@ func (d *Downloader) prefetch() {
 			clen = getContentLength(res.Header)
 		}
 		d.fileSize = clen
+	}
+	if !d.customThreads && d.fileSize >= DoubleThresh {
+		d.threadsNum *= 2
 	}
 	if d.saveTo == "" {
 		cp := getHeaderValue(res.Header, "Content-Disposition")
