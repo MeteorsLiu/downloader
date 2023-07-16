@@ -362,11 +362,26 @@ func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
 	}
 }
 
+func (d *Downloader) getChunkSize(iter bool) int {
+	eachChunk := d.fileSize / d.threadsNum
+	// avoid the indefinite loop
+	if !iter {
+		// small chunk, too many threads
+		// resize the threads to default
+		// and re-calculate
+		if eachChunk < 1024 && d.threadsNum > runtime.NumCPU() {
+			d.threadsNum = runtime.NumCPU()
+			return d.getChunkSize(true)
+		}
+	}
+	return eachChunk
+}
+
 func (d *Downloader) Start() {
 	d.prefetch()
 	var err error
 	size := d.fileSize
-	eachChunk := d.fileSize / d.threadsNum
+	eachChunk := d.getChunkSize(false)
 	chunkMap := map[int]*os.File{}
 	fileName := path.Base(d.target)
 
