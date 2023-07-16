@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	lg = log.New(os.Stderr, "", log.Lshortfile|log.LstdFlags)
+	_verbose = true
+	lg       = log.New(os.Stderr, "", log.Lshortfile|log.LstdFlags)
 )
 
 func panicWithPrefix(c string) {
@@ -17,11 +18,15 @@ func panicWithPrefix(c string) {
 }
 
 func printErr(t, id int, err error) {
-	lg.Printf("第 %d 次线程序号：%d 报错: %v", t, id, err)
+	if _verbose {
+		lg.Printf("\n第 %d 次线程序号：%d 报错: %v", t, id, err)
+	}
 }
 
 func printMsg(v ...any) {
-	lg.Println(v...)
+	if _verbose {
+		lg.Println(v...)
+	}
 }
 func getHeaderValue(header http.Header, key string) string {
 	value := header.Get(key)

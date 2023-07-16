@@ -31,7 +31,7 @@ func TestFileSize(t *testing.T) {
 func TestDownload(t *testing.T) {
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	tstring := `https://speed.hetzner.de/100MB.bin`
+	tstring := `https://speed.hetzner.de/1GB.bin`
 	dl := NewDownloader(WithTarget(tstring))
 	go dl.Start()
 	<-sig

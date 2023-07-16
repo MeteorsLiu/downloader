@@ -18,6 +18,7 @@ import (
 
 	"github.com/MeteorsLiu/downloader/proxy/socks5"
 	"github.com/rapid7/go-get-proxied/proxy"
+	"github.com/schollz/progressbar/v3"
 )
 
 const (
@@ -36,6 +37,7 @@ var (
 )
 
 type Downloader struct {
+	verbose        bool
 	retry          int
 	fileSize       int
 	threadsNum     int
@@ -46,6 +48,7 @@ type Downloader struct {
 	customProxy    string
 	urlProxy       *url.URL
 	pool           *Pool
+	bar            *progressbar.ProgressBar
 	header         http.Header
 	connectTimeout time.Duration
 	timeout        time.Duration
@@ -120,6 +123,7 @@ func NewDownloader(opts ...Options) *Downloader {
 		connectTimeout: DefaultConnectTimeout,
 		header:         make(http.Header),
 		retry:          DefaultRetry,
+		verbose:        true,
 	}
 	for _, o := range opts {
 		o(dl)
@@ -127,6 +131,7 @@ func NewDownloader(opts ...Options) *Downloader {
 	if dl.target == "" {
 		panic("no target website")
 	}
+
 	dl.init()
 	return dl
 }
@@ -163,6 +168,9 @@ func (d *Downloader) proxy() string {
 }
 
 func (dl *Downloader) init() {
+	if dl.verbose {
+		_verbose = true
+	}
 	urlProxy := dl.proxy()
 	if urlProxy == "" {
 		// we need nil here
@@ -264,14 +272,21 @@ func (d *Downloader) prefetch() {
 		panicWithPrefix(err.Error())
 	}
 	defer res.Body.Close()
-	if res.StatusCode == http.StatusPartialContent {
-		d.fileSize = getContentRange(res.Header)
-	} else {
+	switch res.StatusCode {
+	case http.StatusOK:
 		clen := int(res.ContentLength)
 		if clen == 0 {
 			clen = getContentLength(res.Header)
 		}
 		d.fileSize = clen
+	case http.StatusPartialContent:
+		d.fileSize = getContentRange(res.Header)
+	default:
+		panicWithPrefix("下载文件返回了一个奇怪的状态码: " + res.Status)
+	}
+
+	if d.verbose {
+		d.bar = progressbar.DefaultBytes(int64(d.fileSize), "正在下载")
 	}
 	if !d.customThreads && d.fileSize >= DoubleThresh {
 		d.threadsNum *= 2
@@ -291,7 +306,7 @@ func (d *Downloader) prefetch() {
 	}
 }
 
-func (d *Downloader) download(f *os.File, id, frombyteRange, tobyteRange int) error {
+func (d *Downloader) download(f *os.File, id, frombyteRange, tobyteRange int) (int64, error) {
 	header := d.header.Clone()
 	if id > 0 {
 		tobyteRange -= 1
@@ -299,11 +314,17 @@ func (d *Downloader) download(f *os.File, id, frombyteRange, tobyteRange int) er
 	header.Set("Range", fmt.Sprintf("bytes=%d-%d", frombyteRange, tobyteRange))
 	res, err := d.do("GET", header)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer res.Body.Close()
-	_, err = io.Copy(f, res.Body)
-	return err
+	var writer io.Writer
+	if d.verbose {
+		writer = io.MultiWriter(f, d.bar)
+	} else {
+		writer = f
+	}
+
+	return io.Copy(writer, res.Body)
 }
 
 func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
@@ -315,12 +336,12 @@ func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
 			}
 		}()
 		for i := 0; i < d.retry; i++ {
-			if err := d.download(f, id, from, to); err == nil {
+			if n, err := d.download(f, id, from, to); err == nil {
 				return
 			} else {
+				from += int(n)
 				printErr(i, id, err)
 			}
-			os.Truncate(f.Name(), 0)
 
 			sleepTime := 1 << i * time.Second
 			if ticker == nil {
