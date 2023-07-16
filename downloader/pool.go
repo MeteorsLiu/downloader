@@ -6,60 +6,27 @@ import (
 )
 
 type Pool struct {
-	wg     sync.WaitGroup
-	sem    chan struct{}
-	ctx    context.Context
-	doStop context.CancelFunc
+	wg sync.WaitGroup
 }
 
-func NewPool(ctx context.Context, n int) *Pool {
-	p := &Pool{
-		sem: make(chan struct{}, n),
-	}
-	p.ctx, p.doStop = context.WithCancel(ctx)
-	return p
+type Task func()
+
+func NewPool(ctx context.Context) *Pool {
+	return &Pool{}
 }
 
-func (p *Pool) IsRunning() bool { return len(p.sem) > 0 }
+func (p *Pool) newWorker(task Task) {
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		task()
+	}()
+}
 
 func (p *Pool) Wait() {
 	p.wg.Wait()
 }
 
-func (p *Pool) Stop() {
-	p.doStop()
-}
-
-func (p *Pool) Add(task func()) {
-	p.newWorker(task, true)
-}
-
-func (p *Pool) newWorker(task func(), isAddtional ...bool) {
-	p.wg.Add(1)
-	addtional := false
-	if len(isAddtional) > 0 {
-		addtional = isAddtional[0]
-	}
-	go func() {
-		defer func() {
-			if !addtional {
-				<-p.sem
-			}
-			p.wg.Done()
-		}()
-		task()
-	}()
-}
-
-func (p *Pool) Publish(task func()) {
-	select {
-	case <-p.ctx.Done():
-		return
-	default:
-	}
-	select {
-	case p.sem <- struct{}{}:
-		p.newWorker(task)
-	case <-p.ctx.Done():
-	}
+func (p *Pool) Add(task Task) {
+	p.newWorker(task)
 }
