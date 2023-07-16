@@ -1,7 +1,6 @@
 package downloader
 
 import (
-	"context"
 	"sync"
 )
 
@@ -11,7 +10,7 @@ type Pool struct {
 
 type Task func()
 
-func NewPool(ctx context.Context) *Pool {
+func NewPool() *Pool {
 	return &Pool{}
 }
 
