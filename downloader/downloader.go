@@ -2,9 +2,9 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -22,6 +22,7 @@ import (
 )
 
 const (
+	DefaultUserAgent      = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
 	DefaultConnectTimeout = 30 * time.Second
 	DefaultRetry          = 5
 	// if the file is larger than the DoubleThresh
@@ -117,11 +118,15 @@ func WithNoProxy() Options {
 	}
 }
 
+func WithVerbose(v bool) Options {
+	return func(d *Downloader) {
+		d.verbose = v
+	}
+}
+
 func NewDownloader(opts ...Options) *Downloader {
 	dl := &Downloader{
-		threadsNum:     runtime.NumCPU(),
 		connectTimeout: DefaultConnectTimeout,
-		header:         make(http.Header),
 		retry:          DefaultRetry,
 		verbose:        true,
 	}
@@ -141,11 +146,7 @@ func (d *Downloader) safeGetProxy(protocol string) string {
 		GetProxy(protocol, d.target)
 	if p != nil {
 		c := p.String()
-		prefix := "socks5"
-		if protocol == "http" {
-			prefix = "http"
-		}
-		return prefix + c[strings.Index(c, "|")+1:]
+		return protocol + c[strings.Index(c, "|")+1:]
 	}
 	return ""
 }
@@ -161,16 +162,22 @@ func (d *Downloader) proxy() string {
 	case "http:":
 		return d.safeGetProxy("http")
 	case "https":
-		return d.safeGetProxy("https")
+		// if the target is https
+		// the proxy must be socks5
+		// for https proxy in go is not able to used.
+		return d.safeGetProxy("socks5")
 	default:
 		panic("致命错误：无法确定的协议")
 	}
 }
 
 func (dl *Downloader) init() {
-	if dl.verbose {
-		_verbose = true
+	_verbose = dl.verbose
+	if dl.header == nil {
+		dl.header = make(http.Header)
+		dl.header.Set("User-Agent", DefaultUserAgent)
 	}
+
 	urlProxy := dl.proxy()
 	if urlProxy == "" {
 		// we need nil here
@@ -192,7 +199,6 @@ func (dl *Downloader) init() {
 	}
 	dl.stop, dl.doStop = context.WithCancel(cb)
 	dl.pool = NewPool()
-	dl.header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
 }
 
 func (d *Downloader) Proxy() string {
@@ -264,6 +270,46 @@ func (d *Downloader) do(method string, header ...http.Header) (*http.Response, e
 func (d *Downloader) getSavedPathName() string {
 	return strings.Split(path.Base(d.target), "?")[0]
 }
+
+func (d *Downloader) setThreadsNum() {
+	d.threadsNum = runtime.NumCPU()
+	if d.fileSize > 0 && !d.customThreads && d.fileSize >= DoubleThresh {
+		d.threadsNum *= 2
+	}
+}
+
+func (d *Downloader) setSaveTo(header http.Header) {
+	if d.saveTo == "" {
+		cp := getHeaderValue(header, "Content-Disposition")
+		if cp != "" {
+			_, params, err := mime.ParseMediaType(cp)
+			if err == nil {
+				if fn, ok := params["filename"]; ok {
+					d.saveTo = fn
+					return
+				}
+			}
+		}
+		d.saveTo = d.getSavedPathName()
+	}
+}
+
+func (d *Downloader) setBar(desc string) {
+	d.bar = progressbar.NewOptions(d.fileSize,
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionEnableColorCodes(true),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionFullWidth(),
+		progressbar.OptionSetDescription(desc),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "[green]=[reset]",
+			SaucerHead:    "[green]>[reset]",
+			SaucerPadding: " ",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}))
+}
+
 func (d *Downloader) prefetch() {
 	// don't use HEAD here
 	// will cause EOF by HEAD method
@@ -286,45 +332,33 @@ func (d *Downloader) prefetch() {
 	}
 
 	if d.verbose {
-		d.bar = progressbar.DefaultBytes(int64(d.fileSize), "正在下载")
+		d.setBar("[cyan][1/2][reset] 正在下载...")
 	}
-	if !d.customThreads && d.fileSize >= DoubleThresh {
-		d.threadsNum *= 2
-	}
-	if d.saveTo == "" {
-		cp := getHeaderValue(res.Header, "Content-Disposition")
-		if cp != "" {
-			_, params, err := mime.ParseMediaType(cp)
-			if err == nil {
-				if fn, ok := params["filename"]; ok {
-					d.saveTo = fn
-					return
-				}
-			}
-		}
-		d.saveTo = d.getSavedPathName()
-	}
+
+	d.setThreadsNum()
+
+	d.setSaveTo(res.Header)
 }
 
-func (d *Downloader) download(f *os.File, id, frombyteRange, tobyteRange int) (int64, error) {
-	header := d.header.Clone()
-	if id > 0 {
-		tobyteRange -= 1
+func (d *Downloader) getWriterProgress(w io.Writer, isRetry ...bool) io.Writer {
+	if d.verbose {
+		if len(isRetry) == 0 || !isRetry[0] {
+			return io.MultiWriter(w, d.bar)
+		}
 	}
+	return w
+}
+
+func (d *Downloader) download(f *os.File, frombyteRange, tobyteRange int, isRetry bool) (int64, error) {
+	header := d.header.Clone()
 	header.Set("Range", fmt.Sprintf("bytes=%d-%d", frombyteRange, tobyteRange))
 	res, err := d.do("GET", header)
 	if err != nil {
 		return 0, err
 	}
 	defer res.Body.Close()
-	var writer io.Writer
-	if d.verbose {
-		writer = io.MultiWriter(f, d.bar)
-	} else {
-		writer = f
-	}
 
-	return io.Copy(writer, res.Body)
+	return io.Copy(d.getWriterProgress(f, isRetry), res.Body)
 }
 
 func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
@@ -335,11 +369,21 @@ func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
 				ticker.Stop()
 			}
 		}()
+		// the reason why to minus one
+		// is 0-1000, 1000-2000 causes ranges repeated
+		if id > 0 {
+			to -= 1
+		}
 		for i := 0; i < d.retry; i++ {
-			if n, err := d.download(f, id, from, to); err == nil {
+			isRetry := i > 0
+			if n, err := d.download(f, from, to, isRetry); err == nil {
 				return
 			} else {
 				from += int(n)
+				if errors.Is(err, os.ErrClosed) || from == to {
+					// success or unexpected EOF?
+					return
+				}
 				printErr(i, id, err)
 			}
 
@@ -370,14 +414,15 @@ func (d *Downloader) getChunkSize(iter bool) int {
 		// resize the threads to default
 		// and re-calculate
 		if eachChunk < 1024 && d.threadsNum > runtime.NumCPU() {
-			d.threadsNum = runtime.NumCPU()
+			d.customThreads = false
+			d.setThreadsNum()
 			return d.getChunkSize(true)
 		}
 	}
 	return eachChunk
 }
 
-func (d *Downloader) Start() {
+func (d *Downloader) Start(waitDone chan struct{}) {
 	d.prefetch()
 	var err error
 	size := d.fileSize
@@ -394,7 +439,13 @@ func (d *Downloader) Start() {
 			f.Close()
 			os.Remove(fn)
 		}
+		close(waitDone)
 	}()
+
+	printMsgf("使用线程: %d ; 文件大小: %d 字节; 线程区块大小: %d 字节; 开始下载",
+		d.threadsNum,
+		d.fileSize,
+		eachChunk)
 
 	for i := 0; i < d.threadsNum; i++ {
 		chunkMap[i], err = os.CreateTemp("", "*"+fileName)
@@ -428,10 +479,12 @@ func (d *Downloader) Start() {
 	select {
 	case <-waitPool:
 	case <-d.stop.Done():
-		log.Println("已中断")
+		printMsg("已中断")
 		return
 	}
-	printMsg("开始合并")
+	if d.verbose {
+		d.setBar("[cyan][2/2][reset] 正在合并分块...")
+	}
 	saveTo, err := os.OpenFile(d.saveTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		panicWithPrefix(err.Error())
@@ -440,9 +493,10 @@ func (d *Downloader) Start() {
 	// start to combine the chunks
 	// we need to reverse the chunk map
 	// because the calculation of the chunk is reversed
+	writer := d.getWriterProgress(saveTo)
 	for i := len(chunkMap) - 1; i >= 0; i-- {
 		chunkMap[i].Seek(0, io.SeekStart)
-		io.Copy(saveTo, chunkMap[i])
+		io.Copy(writer, chunkMap[i])
 	}
 	printMsg("下载已完成")
 }

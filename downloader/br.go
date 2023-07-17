@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -19,13 +20,19 @@ func panicWithPrefix(c string) {
 
 func printErr(t, id int, err error) {
 	if _verbose {
-		lg.Printf("\n第 %d 次线程序号：%d 报错: %v", t, id, err)
+		lg.Output(2, fmt.Sprintf("\n第 %d 次线程序号：%d 报错: %v", t, id, err))
 	}
 }
 
 func printMsg(v ...any) {
 	if _verbose {
-		lg.Println(v...)
+		fmt.Println(v...)
+	}
+}
+
+func printMsgf(f string, v ...any) {
+	if _verbose {
+		fmt.Printf(f, v...)
 	}
 }
 func getHeaderValue(header http.Header, key string) string {

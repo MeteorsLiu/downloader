@@ -3,6 +3,7 @@ package downloader
 import (
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"syscall"
 	"testing"
@@ -33,8 +34,14 @@ func TestDownload(t *testing.T) {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	tstring := `https://speed.hetzner.de/1GB.bin`
 	dl := NewDownloader(WithTarget(tstring))
-	go dl.Start()
+	wait := make(chan struct{})
+	go dl.Start(wait)
 	<-sig
 	dl.Interrupt()
+	<-wait
+}
 
+func TestDir(t *testing.T) {
+	_, err := os.Stat(path.Dir("xxx.log"))
+	t.Log(os.IsNotExist(err))
 }
