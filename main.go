@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/MeteorsLiu/downloader/downloader"
+	"github.com/MeteorsLiu/downloader/download"
 )
 
 func main() {
@@ -34,35 +34,35 @@ func main() {
 	flag.IntVar(&retry, "retry", 0, "失败重连次数, 默认5次")
 
 	flag.Parse()
-	var opts []downloader.Options
-	opts = append(opts, downloader.WithTarget(target))
-	opts = append(opts, downloader.WithVerbose(verbose))
+	var opts []download.Options
+	opts = append(opts, download.WithTarget(target))
+	opts = append(opts, download.WithVerbose(verbose))
 	if threadsNum > 0 {
-		opts = append(opts, downloader.WithThreadsNum(threadsNum))
+		opts = append(opts, download.WithThreadsNum(threadsNum))
 	}
 	if timeout > 0 {
-		opts = append(opts, downloader.WithTimeout(time.Duration(timeout)*time.Second))
+		opts = append(opts, download.WithTimeout(time.Duration(timeout)*time.Second))
 	}
 	if connectTimeout > 0 {
-		opts = append(opts, downloader.WithConnectTimeout(time.Duration(connectTimeout)*time.Second))
+		opts = append(opts, download.WithConnectTimeout(time.Duration(connectTimeout)*time.Second))
 	}
 	if retry > 0 {
-		opts = append(opts, downloader.WithRetry(retry))
+		opts = append(opts, download.WithRetry(retry))
 	}
 	if saveTo != "" {
-		opts = append(opts, downloader.WithSaveTo(saveTo))
+		opts = append(opts, download.WithSaveTo(saveTo))
 	}
 	if proxy != "" {
-		opts = append(opts, downloader.WithProxy(proxy))
+		opts = append(opts, download.WithProxy(proxy))
 	}
 	if disableProxy {
-		opts = append(opts, downloader.WithNoProxy())
+		opts = append(opts, download.WithNoProxy())
 	}
 	fmt.Println(flag.Args())
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	wait := make(chan struct{})
-	dw := downloader.NewDownloader(opts...)
+	dw := download.NewDownloader(opts...)
 	go dw.Start(wait)
 	select {
 	case <-sig:
