@@ -428,7 +428,7 @@ func (d *Downloader) prefetch() {
 	d.setSaveTo(res.Header)
 }
 
-func (d *Downloader) doMultiThreads(waitDone chan struct{}) {
+func (d *Downloader) doMultiThreads(saveTo *os.File) {
 	var err error
 	size := d.fileSize
 	eachChunk := d.getChunkSize(false)
@@ -444,7 +444,6 @@ func (d *Downloader) doMultiThreads(waitDone chan struct{}) {
 			f.Close()
 			os.Remove(fn)
 		}
-		close(waitDone)
 	}()
 
 	printMsgf("使用线程: %d ; 文件大小: %d 字节; 线程区块大小: %d 字节; 开始下载",
@@ -490,11 +489,6 @@ func (d *Downloader) doMultiThreads(waitDone chan struct{}) {
 	if d.verbose {
 		d.setBar("[cyan][2/2][reset] 正在合并分块...")
 	}
-	saveTo, err := os.OpenFile(d.saveTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		panicWithPrefix(err.Error())
-	}
-	defer saveTo.Close()
 	// start to combine the chunks
 	// we need to reverse the chunk map
 	// because the calculation of the chunk is reversed
@@ -506,14 +500,8 @@ func (d *Downloader) doMultiThreads(waitDone chan struct{}) {
 	printMsg("下载已完成")
 }
 
-func (d *Downloader) doSingleThread(waitDone chan struct{}) {
+func (d *Downloader) doSingleThread(saveTo *os.File, waitDone chan struct{}) {
 	defer close(waitDone)
-
-	saveTo, err := os.OpenFile(d.saveTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		panicWithPrefix(err.Error())
-	}
-	defer saveTo.Close()
 	var ticker *time.Ticker
 	defer func() {
 		if ticker != nil {
@@ -526,6 +514,7 @@ func (d *Downloader) doSingleThread(waitDone chan struct{}) {
 		if err == nil {
 			isRetry := i > 0
 			if _, err := io.Copy(d.getWriterProgress(saveTo, isRetry), res.Body); err == nil {
+				printMsg("下载已完成")
 				return
 			}
 		}
@@ -551,11 +540,24 @@ func (d *Downloader) doSingleThread(waitDone chan struct{}) {
 }
 
 func (d *Downloader) Start(waitDone chan struct{}) {
+	defer close(waitDone)
 	d.prefetch()
+	saveTo, err := os.OpenFile(d.saveTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panicWithPrefix(err.Error())
+	}
+	defer saveTo.Close()
+
 	if d.threadsNum > 1 {
-		d.doMultiThreads(waitDone)
+		d.doMultiThreads(saveTo)
 	} else {
-		d.doSingleThread(waitDone)
+		waitPool := make(chan struct{})
+		go d.doSingleThread(saveTo, waitPool)
+		select {
+		case <-waitPool:
+		case <-d.stop.Done():
+			printMsg("已中断")
+		}
 	}
 }
 
