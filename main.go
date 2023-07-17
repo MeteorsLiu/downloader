@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -58,7 +57,6 @@ func main() {
 	if disableProxy {
 		opts = append(opts, download.WithNoProxy())
 	}
-	fmt.Println(flag.Args())
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	wait := make(chan struct{})
