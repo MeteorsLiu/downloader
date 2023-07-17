@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"mime"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"path"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -433,7 +435,7 @@ func (d *Downloader) doMultiThreads(saveTo *os.File) {
 	size := d.fileSize
 	eachChunk := d.getChunkSize(false)
 	chunkMap := map[int]*os.File{}
-	fileName := path.Base(d.target)
+	fileName := strconv.Itoa(rand.Int())
 
 	defer func() {
 		// catch panic
