@@ -1,6 +1,6 @@
 module github.com/MeteorsLiu/downloader
 
-go 1.20
+go 1.19
 
 require (
 	github.com/rapid7/go-get-proxied v0.0.0-20220112221009-42bdac6386fc
