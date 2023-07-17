@@ -273,6 +273,9 @@ func (d *Downloader) getSavedPathName() string {
 
 func (d *Downloader) setThreadsNum() {
 	d.threadsNum = runtime.NumCPU()
+	if d.fileSize <= 0 {
+		d.threadsNum = 1
+	}
 	if d.fileSize > 0 && !d.customThreads && d.fileSize/1024 >= DoubleThresh {
 		d.threadsNum *= 2
 	}
@@ -308,36 +311,6 @@ func (d *Downloader) setBar(desc string) {
 			BarStart:      "[",
 			BarEnd:        "]",
 		}))
-}
-
-func (d *Downloader) prefetch() {
-	// don't use HEAD here
-	// will cause EOF by HEAD method
-	res, err := d.do("GET")
-	if err != nil {
-		panicWithPrefix(err.Error())
-	}
-	defer res.Body.Close()
-	switch res.StatusCode {
-	case http.StatusOK:
-		clen := int(res.ContentLength)
-		if clen == 0 {
-			clen = getContentLength(res.Header)
-		}
-		d.fileSize = clen
-	case http.StatusPartialContent:
-		d.fileSize = getContentRange(res.Header)
-	default:
-		panicWithPrefix("下载文件返回了一个奇怪的状态码: " + res.Status)
-	}
-
-	if d.verbose {
-		d.setBar("[cyan][1/2][reset] 正在下载...")
-	}
-
-	d.setThreadsNum()
-
-	d.setSaveTo(res.Header)
 }
 
 func (d *Downloader) getWriterProgress(w io.Writer, isRetry ...bool) io.Writer {
@@ -376,16 +349,16 @@ func (d *Downloader) newTask(f *os.File, id, from, to int) Task {
 		}
 		for i := 0; i < d.retry; i++ {
 			isRetry := i > 0
-			if n, err := d.download(f, from, to, isRetry); err == nil {
+			n, err := d.download(f, from, to, isRetry)
+			if err == nil {
 				return
-			} else {
-				from += int(n)
-				if errors.Is(err, os.ErrClosed) || from == to {
-					// success or unexpected EOF?
-					return
-				}
-				printErr(i, id, err)
 			}
+			from += int(n)
+			if errors.Is(err, os.ErrClosed) || from == to {
+				// success or unexpected EOF?
+				return
+			}
+			printErr(i, id, err)
 
 			sleepTime := 1 << i * time.Second
 			if ticker == nil {
@@ -422,8 +395,40 @@ func (d *Downloader) getChunkSize(iter bool) int {
 	return eachChunk
 }
 
-func (d *Downloader) Start(waitDone chan struct{}) {
-	d.prefetch()
+func (d *Downloader) prefetch() {
+	// don't use HEAD here
+	// will cause EOF by HEAD method
+	res, err := d.do("GET")
+	if err != nil {
+		panicWithPrefix(err.Error())
+	}
+	defer res.Body.Close()
+	switch res.StatusCode {
+	case http.StatusOK:
+		clen := int(res.ContentLength)
+		if clen == 0 {
+			clen = getContentLength(res.Header)
+		}
+		d.fileSize = clen
+	case http.StatusPartialContent:
+		d.fileSize = getContentRange(res.Header)
+	default:
+		panicWithPrefix("下载文件返回了一个奇怪的状态码: " + res.Status)
+	}
+	d.setThreadsNum()
+	if d.verbose {
+		switch d.threadsNum {
+		case 1:
+			d.setBar("[cyan][1/1][reset] 正在下载...")
+		default:
+			d.setBar("[cyan][1/2][reset] 正在下载...")
+		}
+	}
+
+	d.setSaveTo(res.Header)
+}
+
+func (d *Downloader) doMultiThreads(waitDone chan struct{}) {
 	var err error
 	size := d.fileSize
 	eachChunk := d.getChunkSize(false)
@@ -499,6 +504,59 @@ func (d *Downloader) Start(waitDone chan struct{}) {
 		io.Copy(writer, chunkMap[i])
 	}
 	printMsg("下载已完成")
+}
+
+func (d *Downloader) doSingleThread(waitDone chan struct{}) {
+	defer close(waitDone)
+
+	saveTo, err := os.OpenFile(d.saveTo, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panicWithPrefix(err.Error())
+	}
+	defer saveTo.Close()
+	var ticker *time.Ticker
+	defer func() {
+		if ticker != nil {
+			ticker.Stop()
+		}
+	}()
+
+	for i := 0; i < d.retry; i++ {
+		res, err := d.do("GET")
+		if err == nil {
+			isRetry := i > 0
+			if _, err := io.Copy(d.getWriterProgress(saveTo, isRetry), res.Body); err == nil {
+				return
+			}
+		}
+		res.Body.Close()
+		printErr(i, 0, err)
+
+		sleepTime := 1 << i * time.Second
+		if ticker == nil {
+			ticker = time.NewTicker(sleepTime)
+		} else {
+			ticker.Reset(sleepTime)
+		}
+
+		select {
+		case <-d.stop.Done():
+			return
+		case <-ticker.C:
+		}
+
+	}
+	panicWithPrefix("重试超时")
+
+}
+
+func (d *Downloader) Start(waitDone chan struct{}) {
+	d.prefetch()
+	if d.threadsNum > 1 {
+		d.doMultiThreads(waitDone)
+	} else {
+		d.doSingleThread(waitDone)
+	}
 }
 
 func (d *Downloader) Interrupt() {
