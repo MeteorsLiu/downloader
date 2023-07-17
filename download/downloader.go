@@ -497,7 +497,9 @@ func (d *Downloader) doMultiThreads(saveTo *os.File) {
 	writer := d.getWriterProgress(saveTo)
 	for i := len(chunkMap) - 1; i >= 0; i-- {
 		chunkMap[i].Seek(0, io.SeekStart)
-		io.Copy(writer, chunkMap[i])
+		if _, err := io.Copy(writer, chunkMap[i]); err != nil {
+			printErr(0, i, err)
+		}
 	}
 	printMsg("下载已完成")
 }
