@@ -29,7 +29,7 @@ const (
 	// double the default threadsNum
 	// however, if you set the threadsNum,
 	// this will be ignored.
-	DoubleThresh = 10 * 1024 * 1024 * 1024
+	DoubleThresh = 10 * 1024 * 1024
 )
 
 var (
@@ -273,7 +273,7 @@ func (d *Downloader) getSavedPathName() string {
 
 func (d *Downloader) setThreadsNum() {
 	d.threadsNum = runtime.NumCPU()
-	if d.fileSize > 0 && !d.customThreads && d.fileSize >= DoubleThresh {
+	if d.fileSize > 0 && !d.customThreads && d.fileSize/1024 >= DoubleThresh {
 		d.threadsNum *= 2
 	}
 }
