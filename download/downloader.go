@@ -59,7 +59,7 @@ type Downloader struct {
 
 type Options func(*Downloader)
 
-func trimTarget(target string) string {
+func Trim(target string) string {
 	return reg.ReplaceAllString(target, "")
 }
 
@@ -78,7 +78,7 @@ func WithHeader(header http.Header) Options {
 
 func WithTarget(target string) Options {
 	return func(d *Downloader) {
-		d.target = trimTarget(target)
+		d.target = Trim(target)
 	}
 }
 
@@ -218,7 +218,7 @@ func (d *Downloader) SetHeader(header http.Header) {
 }
 
 func (d *Downloader) SetTarget(target string) {
-	d.target = trimTarget(target)
+	d.target = Trim(target)
 }
 
 func (d *Downloader) SetTimeout(timeout time.Duration) {

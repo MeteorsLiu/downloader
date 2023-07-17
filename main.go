@@ -20,6 +20,7 @@ func main() {
 	var proxy string
 	var verbose bool
 	var disableProxy bool
+	var httpHeader header
 
 	flag.BoolVar(&verbose, "v", true, "是否开启状态提示(Verbose), 默认开启")
 	flag.BoolVar(&disableProxy, "no-proxy", false, "是否关闭代理,  默认不关闭")
@@ -31,7 +32,7 @@ func main() {
 	flag.IntVar(&timeout, "timeout", 0, "下载超时时间, 默认不超时, 单位秒")
 	flag.IntVar(&connectTimeout, "connect", 0, "目标URL连接超时时间, 默认30秒, 单位秒")
 	flag.IntVar(&retry, "retry", 0, "失败重连次数, 默认5次")
-
+	flag.Var(&httpHeader, "H", "自定义HTTP Header, 请参考curl")
 	flag.Parse()
 	var opts []download.Options
 	opts = append(opts, download.WithTarget(target))
@@ -56,6 +57,9 @@ func main() {
 	}
 	if disableProxy {
 		opts = append(opts, download.WithNoProxy())
+	}
+	if len(httpHeader) > 0 {
+		opts = append(opts, download.WithHeader(httpHeader.Header()))
 	}
 	sig := make(chan os.Signal)
 	signal.Notify(sig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
