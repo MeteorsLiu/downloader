@@ -28,7 +28,7 @@ const (
 	// if the file is larger than the DoubleThresh
 	// double the default threadsNum
 	// however, if you set the threadsNum,
-	// this will be ignored.
+	// this will be ignored
 	DoubleThresh = 10 * 1024 * 1024
 )
 
