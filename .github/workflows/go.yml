@@ -10,6 +10,7 @@ on:
 jobs:
   build:
     name: GoReleaser build
+    env: CGO_ENABLED=0
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +24,7 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: stable
+      - run: go env -w CGO_ENABLED=0
       - run: go mod tidy
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@master
