@@ -3,6 +3,7 @@ module github.com/MeteorsLiu/downloader
 go 1.19
 
 require (
+	github.com/boltdb/bolt v1.3.1
 	github.com/rapid7/go-get-proxied v0.0.0-20220112221009-42bdac6386fc
 	github.com/schollz/progressbar/v3 v3.13.1
 )

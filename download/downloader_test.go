@@ -23,10 +23,10 @@ func TestGetProxy(t *testing.T) {
 }
 
 func TestFileSize(t *testing.T) {
-	tstring := `https://speed.hetzner.de/100MB.bin`
+	tstring := `https://github.com/puzpuzpuz/xsync`
 	dl := NewDownloader(WithTarget(tstring))
 	dl.prefetch()
-	t.Log(dl.fileSize)
+	t.Log(dl.FileSize, dl.ThreadsNum)
 }
 
 func TestDownload(t *testing.T) {
@@ -44,4 +44,10 @@ func TestDownload(t *testing.T) {
 func TestDir(t *testing.T) {
 	_, err := os.Stat(path.Dir("xxx.log"))
 	t.Log(os.IsNotExist(err))
+
+	t.Log(os.UserCacheDir())
+	t.Log(os.UserConfigDir())
+	t.Log(os.UserHomeDir())
+
+	t.Log(getUserPath())
 }

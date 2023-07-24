@@ -10,6 +10,17 @@ import (
 	"github.com/MeteorsLiu/downloader/download"
 )
 
+func work(sig chan os.Signal, task func(wait chan struct{}), interrupt func()) {
+	wait := make(chan struct{})
+	go task(wait)
+	select {
+	case <-sig:
+		interrupt()
+		<-wait
+	case <-wait:
+	}
+}
+
 func main() {
 	var target string
 	var threadsNum int
@@ -19,11 +30,14 @@ func main() {
 	var saveTo string
 	var proxy string
 	var verbose bool
+	var allowChanged bool
 	var disableProxy bool
+	var recoverOnly bool
 	var httpHeader header
-
+	flag.BoolVar(&allowChanged, "allow-changed", false, "是否允许在区块发生改变情况下恢复文件, 默认不允许")
 	flag.BoolVar(&verbose, "v", true, "是否开启状态提示(Verbose), 默认开启")
 	flag.BoolVar(&disableProxy, "no-proxy", false, "是否关闭代理,  默认不关闭")
+	flag.BoolVar(&recoverOnly, "recover-only", false, "仅恢复未完成任务, 不进行新的下载")
 	flag.StringVar(&target, "target", "", "下载目标URL")
 	flag.StringVar(&saveTo, "o", "", "下载目标保存地址, 默认为当前目录")
 	flag.StringVar(&proxy, "p", "", "自定义代理, 默认自动检测")
@@ -37,6 +51,9 @@ func main() {
 	var opts []download.Options
 	opts = append(opts, download.WithTarget(target))
 	opts = append(opts, download.WithVerbose(verbose))
+
+	download.Verbose = verbose
+
 	if threadsNum > 0 {
 		opts = append(opts, download.WithThreadsNum(threadsNum))
 	}
@@ -61,15 +78,18 @@ func main() {
 	if len(httpHeader) > 0 {
 		opts = append(opts, download.WithHeader(httpHeader.Header()))
 	}
-	sig := make(chan os.Signal)
+	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
-	wait := make(chan struct{})
-	dw := download.NewDownloader(opts...)
-	go dw.Start(wait)
-	select {
-	case <-sig:
-		dw.Interrupt()
-		<-wait
-	case <-wait:
+
+	if doRecoverJobs(sig) {
+		return
+	}
+	if !recoverOnly {
+		dw := download.NewDownloader(opts...)
+		work(sig, func(wait chan struct{}) {
+			dw.Start(wait)
+		}, func() {
+			dw.Interrupt()
+		})
 	}
 }
