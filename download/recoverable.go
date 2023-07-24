@@ -23,7 +23,7 @@ func getUserPath() string {
 		return ""
 	}
 	udrName := filepath.Join(udr, "MeteorDownloader")
-	if err := os.Mkdir(udrName, 0755); err != nil {
+	if err := os.MkdirAll(udrName, 0755); err != nil {
 		return ""
 	}
 	return udrName
@@ -32,12 +32,12 @@ func getUserPath() string {
 func getTempPath() string {
 	udr, err := os.UserConfigDir()
 	if err != nil {
-		os.Mkdir("recoverTemp", 0755)
+		os.MkdirAll("recoverTemp", 0755)
 		return "recoverTemp"
 	}
 	udrName := filepath.Join(udr, "MeteorDownloader", "recoverTemp")
 	if err := os.MkdirAll(udrName, 0755); err != nil {
-		os.Mkdir("recoverTemp", 0755)
+		os.MkdirAll("recoverTemp", 0755)
 		return "recoverTemp"
 	}
 	return udrName

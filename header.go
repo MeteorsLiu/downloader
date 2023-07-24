@@ -10,6 +10,15 @@ import (
 
 type header []string
 
+func filterHeader(name string) bool {
+	switch strings.ToLower(name) {
+	case "range":
+		return true
+	default:
+		return false
+	}
+}
+
 func (i *header) String() string {
 	var sb strings.Builder
 	for _, v := range *i {
@@ -28,7 +37,10 @@ func (i *header) Header() http.Header {
 		if len(one) != 2 {
 			log.Fatal("无法缺定的Http Header: ", one[0])
 		}
-		h.Set(one[0], one[1])
+
+		if !filterHeader(one[0]) {
+			h.Set(one[0], one[1])
+		}
 	}
 	return h
 }

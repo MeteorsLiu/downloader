@@ -562,8 +562,13 @@ func (d *Downloader) doRecover(js []byte) {
 	if d.verbose {
 		d.setBar("[cyan][2/2][reset] 恢复合并...")
 	}
-	saveTo.Seek(0, io.SeekStart)
-	chunkMap.Combine(d.getWriterProgress(saveTo), saveTo)
+	if !asyncWork(d.stop, func() {
+		chunkMap.Combine(d.getWriterProgress(saveTo), saveTo)
+	}, func() {
+		printMsg("已中断")
+	}) {
+		return
+	}
 	printMsg("已完成恢复")
 }
 
@@ -573,12 +578,10 @@ func (d *Downloader) Start(waitDone chan struct{}, js ...[]byte) {
 	}
 	defer close(waitDone)
 
-	if !d.isRecovering {
-		d.prefetch()
-	}
 	if d.isRecovering {
 		d.doRecover(js[0])
 	} else {
+		d.prefetch()
 		d.doDownload()
 	}
 
